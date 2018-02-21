@@ -15,10 +15,13 @@ writeWrite fn cfg = R.renderFile fn x
     x :: LaTeX
     x = ((tikzpicture $ figuretikz $ conv cfg))
 
+writeProject fn = writeWrite ("../report/" ++ fn ++ ".tex")
+
 newtype Id = Id Int deriving (Show, Num, Eq, Ord)
+type Rc = Int
 
 data Object = Object Bool Id Int deriving Show
-newtype Heap = Heap [Object] deriving Show
+data Actor = Actor [Object] [(Id, Rc)] deriving Show
 
 objPointToFig :: (Object, Point) -> Figure
 objPointToFig (Object imm (Id id) _, p@(px, py)) = Figures 
@@ -60,7 +63,7 @@ heightHeap = 4
 spacingHeap = 0.5
 
 conv :: Cfg -> Figure
-conv (Cfg hs fs) = Figures $ heaps ++ alphas ++ objs ++ fields
+conv (Cfg hs fs afs) = Figures $ heaps ++ alphas ++ objs ++ fields ++ actorfields ++ rcs
   where
     n = length hs
 
@@ -76,8 +79,8 @@ conv (Cfg hs fs) = Figures $ heaps ++ alphas ++ objs ++ fields
     offsets :: [Point]
     offsets = map (\i -> (fromIntegral i * (widthHeap + spacingHeap), fromIntegral 0)) [0..]
 
-    f :: Heap -> Point -> [(Object, Point)]
-    f (Heap os) p = organiseObjects os p
+    f :: Actor -> Point -> [(Object, Point)]
+    f (Actor os _) p = organiseObjects os p
 
     organised :: [(Object, Point)]
     organised = concatMap (uncurry f) (zip hs offsets)
@@ -90,16 +93,50 @@ conv (Cfg hs fs) = Figures $ heaps ++ alphas ++ objs ++ fields
                ((Object _ id2 _), p2) <- organised,
                (id1, id2) `elem` fs]
 
+    actorfields = [let (ap', op') = modifyPs ap op in Arrow [ap', op']
+                  | ((Object _ oid _), op) <- organised,
+                    (ap, aid) <- map (\i -> (alphapos i, Id i)) [0..(n-1)],
+                    (aid, oid) `elem` afs]
+                    
+    rcs = zipWith3 makeRcs hs [0..] (map rcpos [0..])
+    rcpos i = (widthHeap / 2 + (widthHeap + spacingHeap) * (fromIntegral i), -heightHeap) 
+
+makeRcs :: Actor -> Int -> Point -> Figure
+makeRcs (Actor _ rs) aid (x,y) = Figures ret
+  where
+    spacing = 0.5
+    spacingInit = 0.5
+    poses = map (\i -> (x, -i*spacing + y)) [1..]
+
+    ret = zipWith (\(oid, rc) pos -> Text pos (text oid rc)) rs poses
+
+    text (Id oid) rc = TeXMath Dollar $ TeXRaw $ TX.pack $ 
+      "\\alpha_" ++ show aid ++
+      ".rc(\\iota_" ++ show oid ++
+      ") = " ++ show rc
+
+
+
+
 sqr x = x * x
 
 modifyPs (x1, y1) (x2, y2) = (p1', p2')
   where
     length = sqrt $ sqr (x2 - x1) + sqr (y2 - y1)
     angle = atan2 (y2 - y1) (x2 - x1)
-    dist = 0.6
+    dist = 0.3
     p1' = (x1 + dist * cos angle, y1 + dist * sin angle)
     p2' = (x2 - dist * cos angle, y2 - dist * sin angle)
 
-data Cfg = Cfg [Heap] [(Id, Id)] deriving Show
+data Cfg = Cfg [Actor] [(Id, Id)] [(Id, Id)] deriving Show
 
-cfg0 = Cfg [Heap [Object True 0 0], Heap [Object False 2 0, Object True 1 1]] [(0, 1)]
+cfg0 = Cfg [Actor [Object True 0 0] [], Actor [Object False 2 0, Object True 1 1] []] [(0, 1)] []
+cfg1 = Cfg [Actor [Object True 0 0] [], Actor [Object True 1 0, Object True 2 1] []] [(0, 1), (1, 2)] [(0, 0)]
+cfgprotect = Cfg [ Actor [Object True 0 0, Object True 4 1, Object True 3 1] []
+                 , Actor [Object True 1 0, Object True 2 1] []]
+                 [(0, 1), (1, 2), (2, 3), (3, 4)] [(0, 0)]
+
+cfglb = Cfg [ Actor [Object True 0 0, Object True 1 1] [(2, 1)]
+            , Actor [Object True 2 0, Object True 3 1] [(2, 1), (4, 1)]
+            , Actor [Object True 4 0, Object True 5 1] [(4, 1)]] 
+                 [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)] [(0, 0)]
