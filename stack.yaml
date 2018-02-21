@@ -1,0 +1,9 @@
+flags: {}
+extra-package-dbs: []
+packages:
+- '.'
+- '../../projects/HaTeX'
+extra-deps:
+- category-extras-0.53.1
+- listsafe-0.1.0.1
+resolver: lts-8.11
