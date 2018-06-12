@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiWayIf #-}
 
 module Lib where
 
@@ -30,10 +31,24 @@ data Object = Object
 
 getRawObjId o = let (Id id) = getObjId o in id
 
-data Actor = Actor [Object] [(Id, Rc)] deriving Show
-data RefType = Ref | CurveRef Double | NamedCurvedRef String | NamedRef String | DroppedRef | DroppedRefRev deriving Show
+data Actor = Actor 
+  { getHeap :: [Object] 
+  , getRCs :: [(Id, Rc)]
+  } deriving Show
+data RefType 
+  = Ref
+  | CurveRef Double
+  | NamedCurvedRef String
+  | NamedRef String
+  | DroppedRef
+  | DroppedRefRev
+  deriving Show
 
-data Cfg = Cfg [Actor] [(Id, Id, RefType)] [(Id, Id, RefType)] deriving Show
+data Cfg = Cfg
+  { getActors :: [Actor]
+  , getObjectReferences :: [(Id, Id, RefType)] 
+  , getActorReferences :: [(Id, Id, RefType)] 
+  } deriving Show
 
 objPointToFig :: (Object, Point) -> Figure
 objPointToFig (o, p@(px, py)) = Figures 
@@ -69,8 +84,6 @@ organiseObjects os (offsetx, offsety) = offset
     all = concat widthed
 
     offset = (\(o, (x, y)) -> (o, (x * widthHeap + offsetx, -y * heightHeap + offsety))) <$> all
-
-    
 
 widthHeap = 3
 heightHeap = 4
@@ -199,20 +212,6 @@ genRef p0@(x0, y0) p1@(x1, y1) (NamedCurvedRef name)
     dir2 = dir + pi / 2
     textPos = (mx + cos(dir2) *textOffset, my + sin(dir2) * textOffset)
 
--- genRef p0@(x0, y0) p1@(x1, y1) DroppedRefRev
---   = Figures [ Arrow [p0, p1]
---             , Line [strikeStart, strikeEnd]
---             , Line [strikeStart', strikeEnd' ]
---             ]
---   where
---     (mx, my) = ((x0 + x1) / 2, (y0 + y1) / 2)
---     strikeLen = 0.126
---     doubledist = -0.08
---     strikeStart = (mx + strikeLen, my + strikeLen)
---     strikeEnd = (mx - strikeLen, my - strikeLen)
---     strikeStart' = (mx + strikeLen, my + strikeLen + doubledist)
---     strikeEnd' = (mx - strikeLen, my - strikeLen + doubledist)
-
 makeRcs :: Actor -> Int -> Point -> Figure
 makeRcs (Actor _ rs) aid (x,y) = Figures ret
   where
@@ -231,11 +230,10 @@ makeRcs (Actor _ rs) aid (x,y) = Figures ret
 
 
 sqr x = x * x
-
-sign x = case () of
-  () | x > 0 -> 1
-  () | x < 0 -> -1
-  () -> 0
+sign x 
+  | x > 0 = 1
+  | x < 0 = -1
+  | otherwise = 0
 
 modifyPs (x1, y1) (x2, y2) = (p1', p2')
   where
@@ -250,83 +248,6 @@ mkMut id row = Object False id row ""
 mkImm id row = Object True id row ""
 mkImmCustom id row cust = Object True id row cust
 
--- cfg0 = Cfg [Actor [mkImm 0 0] [(0,0)], Actor [mkMut 2 0, mkImm 1 1] []] [(0, 1)] []
--- 
--- cfg1 = Cfg [Actor [mkImm 0 0] [(0,0), (1, 1), (2, 0)],
---             Actor [mkImm 1 0, mkImm 2 1] [(0,0), (1, 1), (2, 0)]
---             ] [(0, 1), (1, 2)] [(0, 0, Ref)]
--- 
--- cfgCollectZeroRC0 = 
---   Cfg [ Actor [mkImmCustom 0 0 "U"] [(0,0), (1, 1), (2, 0)]
---       , Actor [mkImmCustom 1 0 "U", mkImmCustom 2 1 "R"] [(0,0), (1, 1), (2, 0)]
---       ] [(0, 1), (1, 2)] [(0, 0, DroppedRef), (0, 2, Ref)]
--- 
--- cfgCollectZeroRC1 = 
---   Cfg [ Actor [] [(1, 0), (2, 1)]
---       , Actor [mkImm 1 0 , mkImm 2 1 ] [(1, 0), (2, 1)]
---       ] [(1, 2)] [(0, 2, Ref)]
--- 
--- cfgprotect = Cfg [ Actor [mkImm 0 0, mkImm 4 1, mkImm 3 1] []
---                  , Actor [mkImm 1 0, mkImm 2 1] [] 
---                  ]
---                  [(0, 1), (1, 2), (2, 3), (3, 4)] [(0, 0, Ref)]
--- 
--- cfglb = Cfg [ Actor [mkImm 0 0, mkImm 1 1] [(2, 1)]
---             , Actor [mkImm 2 0, mkImm 3 1] [(2, 1), (4, 1)]
---             , Actor [mkImm 4 0, mkImm 5 1] [(4, 1)]] 
---                  [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)] [(0, 0, Ref)]
--- 
--- cfgSend0 = Cfg [ Actor [mkMut 0 0, mkImm 1 1, mkImm 3 2] [(2, 2)]
---               , Actor [mkImm 4 1, mkImm 2 0] [(2, 2)] 
---               , Actor [] []
---               ]
---               [(0, 1), (0, 2), (1, 3), (2, 4)] [(0, 0, Ref)]
--- 
--- cfgSend1 = Cfg [ Actor [mkMut 0 0, mkImm 1 1, mkImm 3 2] [(0, 1), (1, 1), (2, 1)]
---               , Actor [mkImm 2 0, mkImm 4 1] [(2, 2)] 
---               , Actor [] [(0,1), (1, 1), (2, 1)]
---               ]
---               [(0, 1), (0, 2), (1, 3), (2, 4)] [(0, 0, DroppedRef), (2, 0, Ref)]
--- 
--- 
--- cfgSendZeroRC0 = 
---   Cfg [ Actor [mkImm 0 0] [(0,0), (1, 1), (2, 0)]
---       , Actor [mkImm 1 0, mkImm 2 1] [(0,0), (1, 1), (2, 0)]
---       , Actor [] []
---       ] [(0, 1), (1, 2)] [(0, 0, Ref), (0, 2, Ref)]
--- 
--- cfgSendZeroRC1 = 
---   Cfg [ Actor [mkImm 0 0] [(0,0), (1, 1), (2, 255)]
---       , Actor [mkImm 1 0, mkImm 2 1] [(0,0), (1, 1), (2, 256)]
---       , Actor [] [(2, 1)]
---       ] [(0, 1), (1, 2)] [(0, 0, Ref), (2, 2, Ref)]
--- 
--- cfgsubref0 =
---   Cfg [ Actor [mkImm 0 0] [(1, 1)]
---       , Actor [mkImm 1 0, mkImm 2 0] [(1,1), (3, 1)]
---       , Actor [mkImm 3 0] [(3, 1)]
---       ] [(0, 1), (1, 2), (2, 3)] [(0, 0, Ref)]
--- 
--- cfgsubref1 =
---   Cfg [ Actor [mkImm 0 0] [(1, 1)]
---       , Actor [mkImm 1 0, mkImm 2 0] [(1,1), (3, 1)]
---       , Actor [mkImm 3 0] [(3, 1)]
---       ] [(0, 1), (1, 2), (2, 3)] [(0, 0, DroppedRef), (0, 2, Ref)]
--- 
--- cfgsubref2 =
---   Cfg [ Actor [] [(2, 1)]
---       , Actor [mkImm 1 0, mkImm 2 0] [(1,0), (2, 1), (3, 1)]
---       , Actor [mkImm 3 0] [(3, 1)]
---       ] [(0, 1), (1, 2), (2, 3)] [(0, 2, Ref)]
--- 
--- 
--- cfgsubrefbad =
---   Cfg [ Actor [] [(0, 1)]
---       , Actor [mkImm 0 0, mkImm 1 0, mkImm 2 1, mkImm 3 1] [(0,1), (4, 1)]
---       , Actor [mkImm 4 0] [(4, 1)]
---       ] [(0, 1), (1, 4), (2, 3), (3, 4)] [(0, 0, DroppedRefRev), (0, 2, Ref)]
---
-
 refTag = NamedRef "\\tiny{Tag}"
 refRef = NamedRef "\\tiny{Ref}"
 refBox = NamedRef "\\tiny{Box}"
@@ -337,6 +258,11 @@ curveRefRef = NamedCurvedRef "\\tiny{Ref}"
 curveRefBox = NamedCurvedRef "\\tiny{Box}"
 curveRefVal = NamedCurvedRef "\\tiny{Val}"
 curveRefIso = NamedCurvedRef "\\tiny{Iso}"
+
+
+--------------------------------------------
+-- Some configurations
+--------------------------------------------
 
 cfgex = 
   Cfg [ Actor [mkMut 0 1, mkMut 1 1, mkMut 2 0, mkImm 3 2] []
